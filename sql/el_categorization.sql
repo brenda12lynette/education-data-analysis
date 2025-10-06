@@ -1,163 +1,87 @@
-# EL Student Outcomes Visualization
-# Creates charts for CTE completion analysis by English Learner status
+-- English Learner Student Categorization and Analysis
+-- This query categorizes students by EL status and tracks their CTE participation
 
-library(ggplot2)
-library(dplyr)
-library(tidyr)
+WITH Student_Demographics AS (
+    -- Get current year student demographics with standardized race/ethnicity
+    SELECT DISTINCT 
+        STD_NUMBER,
+        SYE,
+        SCH_NUMBER,
+        GRADE_LVL_NUMBER,
+        STD_GENDER,
+        CASE 
+            WHEN ETH_RACE = 'African American/Black' THEN 'Black'
+            WHEN ETH_RACE = 'Native American/Alaskan Native' THEN 'Indigenous People'
+            WHEN ETH_RACE = 'American Indian' THEN 'Indigenous People'
+            WHEN ETH_RACE = 'Hawaiian/Pacific Islander' 
+                OR ETH_RACE = 'Hawiian/Pacific Islander' THEN 'Pacific Islander'
+            ELSE ETH_RACE 
+        END AS ETH_RACE,
+        ELL_FLAG,
+        ELL_LVL,
+        SWD_FLAG,
+        LOW_INCOME_FLAG,
+        FIRST_ENROLLED_US
+    FROM [DWH].[ASM].[STUDENT_DEMOGRAPHICS_CSY]
+    WHERE CURRENT_ENROLLED_FLAG = 'Yes'
+),
 
-# Define consistent color scheme for EL categories
-el_colors <- c(
-  "Never EL" = "#2E86AB",
-  "Current EL (<5 years)" = "#A23B72",
-  "Current EL (5+ years)" = "#F18F01",
-  "Former EL (<5 years)" = "#C73E1D",
-  "Former EL (5+ years)" = "#6A994E"
+EL_Status_Calculation AS (
+    -- Calculate years in district and categorize EL status
+    SELECT 
+        sd.*,
+        DATEDIFF(year, sd.FIRST_ENROLLED_US, GETDATE()) AS Years_in_District,
+        CASE 
+            WHEN sd.ELL_FLAG = 0 THEN 'Never EL'
+            WHEN sd.ELL_FLAG = 1 AND DATEDIFF(year, sd.FIRST_ENROLLED_US, GETDATE()) < 5 
+                THEN 'Current EL (<5 years)'
+            WHEN sd.ELL_FLAG = 1 AND DATEDIFF(year, sd.FIRST_ENROLLED_US, GETDATE()) >= 5 
+                THEN 'Current EL (5+ years)'
+            ELSE 'Former EL'
+        END AS EL_Category
+    FROM Student_Demographics sd
+),
+
+CTE_Participation AS (
+    -- Get CTE completion status from assessment data
+    SELECT 
+        STD_NUMBER,
+        SYE,
+        MAX(CASE WHEN CTE_COMPLETER = 1 THEN 1 ELSE 0 END) as Is_Completer,
+        MAX(CASE WHEN CTE_CONCENTRATOR = 1 THEN 1 ELSE 0 END) as Is_Concentrator
+    FROM [ASSESSMENT_DATA_MART].[Assessment].[CTE_Data]
+    GROUP BY STD_NUMBER, SYE
 )
 
-# Example data structure (replace with actual data from SQL query)
-# This demonstrates the visualization approach with sample data
-completion_data <- data.frame(
-  EL_Category = c("Never EL", "Current EL (<5 years)", "Current EL (5+ years)", 
-                  "Former EL (<5 years)", "Former EL (5+ years)"),
-  Total_Students = c(1200, 450, 280, 320, 190),
-  Completers = c(480, 135, 84, 144, 95),
-  Completion_Rate = c(40.0, 30.0, 30.0, 45.0, 50.0)
-)
+-- Final aggregation by EL category
+SELECT 
+    els.EL_Category,
+    COUNT(DISTINCT els.STD_NUMBER) as Total_Students,
+    SUM(CASE WHEN cte.Is_Completer = 1 THEN 1 ELSE 0 END) as CTE_Completers,
+    SUM(CASE WHEN cte.Is_Concentrator = 1 THEN 1 ELSE 0 END) as CTE_Concentrators,
+    CAST(SUM(CASE WHEN cte.Is_Completer = 1 THEN 1 ELSE 0 END) * 100.0 
+        / NULLIF(COUNT(DISTINCT els.STD_NUMBER), 0) AS DECIMAL(5,2)) as Completion_Rate,
+    AVG(els.Years_in_District) as Avg_Years_in_District
+FROM EL_Status_Calculation els
+LEFT JOIN CTE_Participation cte 
+    ON els.STD_NUMBER = cte.STD_NUMBER 
+    AND els.SYE = cte.SYE
+WHERE els.GRADE_LVL_NUMBER >= 9  -- Focus on high school students
+GROUP BY els.EL_Category
+ORDER BY Total_Students DESC;
 
-# Visualization 1: CTE Completion Rates by EL Category
-completion_plot <- ggplot(completion_data, 
-                          aes(x = reorder(EL_Category, -Completion_Rate), 
-                              y = Completion_Rate, 
-                              fill = EL_Category)) +
-  geom_col(width = 0.7) +
-  geom_text(aes(label = sprintf("%0.1f%%\n(%d/%d)", 
-                                Completion_Rate, 
-                                Completers, 
-                                Total_Students)),
-            vjust = -0.5, 
-            size = 3.5) +
-  scale_fill_manual(values = el_colors) +
-  scale_y_continuous(limits = c(0, 60),
-                     breaks = seq(0, 60, 10),
-                     labels = function(x) paste0(x, "%")) +
-  labs(
-    title = "CTE Completion Rates by English Learner Category",
-    subtitle = "High School Students (Grades 9-12)",
-    x = "English Learner Category",
-    y = "Completion Rate (%)",
-    caption = "Note: Anonymized data for demonstration purposes"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
-    plot.subtitle = element_text(size = 12, hjust = 0.5),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
-    axis.title = element_text(size = 12, face = "bold"),
-    legend.position = "none",
-    panel.grid.minor = element_blank()
-  )
-
-# Save plot
-ggsave("sample_outputs/completion_rates_chart.png", 
-       completion_plot, 
-       width = 10, 
-       height = 6, 
-       dpi = 300)
-
-# Visualization 2: Year-over-Year Trends
-# Sample trend data
-trend_data <- data.frame(
-  Year = rep(2020:2024, each = 5),
-  EL_Category = rep(c("Never EL", "Current EL (<5 years)", "Current EL (5+ years)", 
-                      "Former EL (<5 years)", "Former EL (5+ years)"), 5),
-  Completion_Rate = c(
-    35, 25, 28, 40, 45,  # 2020
-    37, 27, 29, 42, 47,  # 2021
-    38, 28, 28, 43, 48,  # 2022
-    39, 29, 30, 44, 49,  # 2023
-    40, 30, 30, 45, 50   # 2024
-  )
-)
-
-trend_plot <- ggplot(trend_data, 
-                     aes(x = Year, 
-                         y = Completion_Rate, 
-                         color = EL_Category, 
-                         group = EL_Category)) +
-  geom_line(size = 1.2) +
-  geom_point(size = 3) +
-  scale_color_manual(values = el_colors) +
-  scale_y_continuous(limits = c(20, 55),
-                     breaks = seq(20, 55, 5),
-                     labels = function(x) paste0(x, "%")) +
-  labs(
-    title = "CTE Completion Rate Trends by EL Category",
-    subtitle = "Five-Year Trend Analysis (2020-2024)",
-    x = "School Year",
-    y = "Completion Rate (%)",
-    color = "EL Category",
-    caption = "Note: Anonymized data for demonstration purposes"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
-    plot.subtitle = element_text(size = 12, hjust = 0.5),
-    axis.title = element_text(size = 12, face = "bold"),
-    legend.position = "bottom",
-    legend.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
-  )
-
-# Save trend plot
-ggsave("sample_outputs/trends_visualization.png", 
-       trend_plot, 
-       width = 10, 
-       height = 6, 
-       dpi = 300)
-
-# Visualization 3: Stacked participation distribution
-participation_data <- completion_data %>%
-  mutate(
-    Completers = Completers,
-    Concentrators_Only = round(Total_Students * 0.25 - Completers),
-    Non_Participants = Total_Students - Completers - Concentrators_Only
-  ) %>%
-  select(EL_Category, Completers, Concentrators_Only, Non_Participants) %>%
-  pivot_longer(cols = -EL_Category, 
-               names_to = "Status", 
-               values_to = "Count")
-
-participation_plot <- ggplot(participation_data, 
-                            aes(x = EL_Category, 
-                                y = Count, 
-                                fill = Status)) +
-  geom_col(position = "fill") +
-  scale_y_continuous(labels = scales::percent) +
-  scale_fill_manual(
-    values = c("Completers" = "#2E86AB",
-               "Concentrators_Only" = "#A23B72", 
-               "Non_Participants" = "#E5E5E5"),
-    labels = c("Completers", "Concentrators Only", "Non-Participants")
-  ) +
-  labs(
-    title = "CTE Participation Distribution by EL Category",
-    x = "English Learner Category",
-    y = "Percentage of Students",
-    fill = "CTE Status"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "bottom"
-  )
-
-# Save participation plot
-ggsave("sample_outputs/participation_distribution.png", 
-       participation_plot, 
-       width = 10, 
-       height = 6, 
-       dpi = 300)
-
-print("Visualizations created successfully!")
-print("Files saved to: sample_outputs/")
+-- Additional analysis: Breakdown by grade level
+SELECT 
+    els.EL_Category,
+    els.GRADE_LVL_NUMBER,
+    COUNT(DISTINCT els.STD_NUMBER) as Student_Count,
+    SUM(CASE WHEN cte.Is_Completer = 1 THEN 1 ELSE 0 END) as Completers,
+    CAST(SUM(CASE WHEN cte.Is_Completer = 1 THEN 1 ELSE 0 END) * 100.0 
+        / NULLIF(COUNT(DISTINCT els.STD_NUMBER), 0) AS DECIMAL(5,2)) as Completion_Rate_Pct
+FROM EL_Status_Calculation els
+LEFT JOIN CTE_Participation cte 
+    ON els.STD_NUMBER = cte.STD_NUMBER 
+    AND els.SYE = cte.SYE
+WHERE els.GRADE_LVL_NUMBER BETWEEN 9 AND 12
+GROUP BY els.EL_Category, els.GRADE_LVL_NUMBER
+ORDER BY els.GRADE_LVL_NUMBER, els.EL_Category;
