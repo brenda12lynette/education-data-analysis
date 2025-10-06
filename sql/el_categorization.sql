@@ -22,7 +22,7 @@ WITH Student_Demographics AS (
         SWD_FLAG,
         LOW_INCOME_FLAG,
         FIRST_ENROLLED_US
-    FROM [DWH].[ASM].[STUDENT_DEMOGRAPHICS_CSY]
+    FROM student_table
     WHERE CURRENT_ENROLLED_FLAG = 'Yes'
 ),
 
@@ -49,7 +49,7 @@ CTE_Participation AS (
         SYE,
         MAX(CASE WHEN CTE_COMPLETER = 1 THEN 1 ELSE 0 END) as Is_Completer,
         MAX(CASE WHEN CTE_CONCENTRATOR = 1 THEN 1 ELSE 0 END) as Is_Concentrator
-    FROM [ASSESSMENT_DATA_MART].[Assessment].[CTE_Data]
+    FROM cte_data
     GROUP BY STD_NUMBER, SYE
 )
 
