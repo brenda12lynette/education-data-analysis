@@ -90,10 +90,10 @@ WITH EL_Status AS (
             WHEN ETH_RACE = 'Hawaiian/Pacific Islander' THEN 'Pacific Islander'
             ELSE ETH_RACE 
         END AS ETH_RACE,
-        FIRST_ENROLLED_US,
+        FIRST_ENROLLED_US
         -- Calculate years in US schools
         DATEDIFF(year, FIRST_ENROLLED_US, GETDATE()) AS Years_in_District
-    FROM DWH.ASM.STUDENT_DEMOGRAPHICS_CSY
+    FROM STUDENTS_CURRENT
     WHERE CURRENT_ENROLLED_FLAG = 'Yes'
 )
 SELECT 
@@ -151,7 +151,7 @@ This work was conducted as part of my role as a Research Analyst in K-12 educati
 ## 📧 Contact
 
 **Brenda Wiebe**
-- GitHub: [@brenda-wiebe](https://github.com/brenda-wiebe)
+- GitHub: [@brenda-wiebe](https://github.com/brenda12lynette)
 - Email: brenda.lynette@gmail.com
 - Location: Salt Lake City, UT
 
@@ -161,4 +161,3 @@ This project structure and code examples are available for educational purposes.
 
 ---
 
-*For more examples of my work, please visit my [GitHub profile](https://github.com/brenda-wiebe).*
