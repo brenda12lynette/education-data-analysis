@@ -1,0 +1,13 @@
+# R Packages
+ggplot2
+dplyr
+tidyr
+DBI
+odbc
+readxl
+
+# Python Packages (if needed)
+pandas
+numpy
+sqlalchemy
+pyodbc
